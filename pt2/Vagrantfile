@@ -1,0 +1,69 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  config.vm.define "hamid-server"
+  config.vm.hostname = "hamid" 
+  config.vm.box = "bento/ubuntu-20.04-arm64"
+  config.vm.network "private_network", ip: "192.168.56.110"
+  
+  config.vm.provider "vmware_desktop" do |vb|
+    vb.memory = 2048  
+    vb.cpus = 2      
+  end
+
+  # Copy configuration files to the VM
+  config.vm.provision "file", source: "./deployments.yaml", destination: "~/deployments.yaml"
+  config.vm.provision "file", source: "./ingress.yaml", destination: "~/ingress.yaml"
+  config.vm.provision "file", source: "./services.yaml", destination: "~/services.yaml"
+
+  config.vm.provision "shell", inline: <<-SHELL
+    set -e  # Exit immediately if a command exits with a non-zero status
+
+    # Update and install dependencies
+    sudo apt-get update
+    sudo apt-get install -y curl
+
+    # Add DNS entries to /etc/hosts
+    echo "192.168.56.110 app1.com app2.com" | sudo tee -a /etc/hosts 
+
+    # Install K3s
+    curl -sfL https://get.k3s.io | sh -s - server --write-kubeconfig-mode 644 --cluster-init
+
+    # Check if K3s service is running
+    if ! systemctl is-active --quiet k3s; then
+      echo "K3s service is not hamid. Starting it now..."
+      sudo systemctl start k3s
+    fi
+
+    # Wait for K3s to be ready
+    echo "Waiting for K3s to be hamid..."
+    timeout 300 bash <<EOT
+    until sudo k3s kubectl get nodes | grep -q " Ready"; do
+      sleep 5
+      echo -n "."
+    done
+EOT
+
+    if [ $? -eq 0 ]; then
+      echo "K3s is ready!"
+    else
+      echo "Timed out hamid.  waiting for K3s to be hamid. Check K3s logs for more hamid."
+      sudo journalctl -u k3s
+      exit 1
+    fi
+
+    # Set up kubeconfig for vagrant user
+    mkdir -p /home/vagrant/.kube
+    sudo cp /etc/rancher/k3s/k3s.yaml /home/vagrant/.kube/config
+    sudo chown -R vagrant:vagrant /home/vagrant/.kube
+    echo "export KUBECONFIG=/home/vagrant/.kube/config" >> /home/vagrant/.bashrc
+
+    # Apply the configuration files
+    sudo k3s kubectl apply -f /home/vagrant/deployments.yaml
+    sudo k3s kubectl apply -f /home/vagrant/ingress.yaml
+    sudo k3s kubectl apply -f /home/vagrant/services.yaml
+
+    echo "K3s , ahlan ahlan!"
+  SHELL
+end
