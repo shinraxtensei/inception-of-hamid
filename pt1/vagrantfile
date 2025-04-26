@@ -1,120 +1,32 @@
 Vagrant.configure("2") do |config|
+  # Using Ubuntu 20.04 for ARM64
   config.vm.box = "bento/ubuntu-20.04-arm64"
-
-  # Define the K3s Server
+  
+  # Server VM config
   config.vm.define "serverS" do |server|
     server.vm.hostname = "serverS"
-    server.vm.network "private_network", ip: "192.168.56.110", type: "static"
-    server.vm.provider "vmware_desktop" do |vb|
-      vb.memory = 1024
-      vb.cpus = 1
+    server.vm.network "private_network", ip: "192.168.56.110"
+    server.vm.provider "vmware_desktop" do |vmware|
+      vmware.gui = false
+      vmware.vmx["memsize"] = "1024"
+      vmware.vmx["numvcpus"] = "1"
     end
-    server.vm.provision "shell", inline: <<-SHELL
-      curl -sfL https://get.k3s.io | sh -s - server   --write-kubeconfig-mode 644 --node-ip "192.168.56.110" --cluster-init
-      sudo cp /var/lib/rancher/k3s/server/node-token /vagrant/node-token
-      mkdir -p ~/.kube
-      sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-      sudo chown $(id -u):$(id -g) ~/.kube/config
-      sed -i 's/127.0.0.1/192.168.56.110/g' ~/.kube/config
-      # Install net-tools for ifconfig
-      sudo apt-get update
-      sudo apt-get install net-tools
-    SHELL
+    
+    # Install K3s in server mode
+    server.vm.provision "shell", path: "scripts/install_k3s_server.sh"
   end
-
-  # Define the K3s Worker Node
+  
+  # Worker VM config
   config.vm.define "serverSW" do |worker|
     worker.vm.hostname = "serverSW"
-    worker.vm.network "private_network", ip: "192.168.56.111", type: "static"
-
-    worker.vm.provider "vmware_desktop" do |vb|
-      vb.memory = 1024
-      vb.cpus = 1
+    worker.vm.network "private_network", ip: "192.168.56.111"
+    worker.vm.provider "vmware_desktop" do |vmware|
+      vmware.gui = false
+      vmware.vmx["memsize"] = "1024"
+      vmware.vmx["numvcpus"] = "1"
     end
-    worker.vm.provision "shell", inline: <<-SHELL
-      curl -sfL https://get.k3s.io | sh -s - agent --server https://192.168.56.110:6443   --token-file /vagrant/node-token --node-ip "192.168.56.111"
-
-    SHELL
+    
+    # Install K3s in agent mode
+    worker.vm.provision "shell", path: "scripts/install_k3s_agent.sh"
   end
-
-  # Common provisioning for both VMs - Install kubectl
-  # TODO:  remove this shit and add the k3s to the bin path 
-  config.vm.provision "shell", inline: <<-SHELL
-    sudo apt-get update
-    sudo apt-get install -y apt-transport-https ca-certificates curl
-
-    # Install kubectl for ARM architecture
-    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/arm64/kubectl"
-    sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-  SHELL
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Vagrant.configure("2") do |config|
-#   config.vm.box = "bento/ubuntu-20.04-arm64"
-
-#   # Define the K3s Server
-#   config.vm.define "serverS" do |server|
-#     server.vm.hostname = "serverS"
-#     server.vm.network "private_network", ip: "192.168.56.110", type: "static"
-#     server.vm.provider "vmware_desktop" do |vb|
-#       vb.memory = 1024
-#       vb.cpus = 1
-#     end
-#     server.vm.provision "shell", inline: <<-SHELL
-#       curl -sfL https://get.k3s.io | sh -s - server --node-ip 192.168.56.110 --write-kubeconfig-mode 644
-#         # Copy the node-token to the shared folder
-#       sudo cp /var/lib/rancher/k3s/server/node-token /vagrant/node-token
-#         # Copy the kubeconfig of k3s to the global kubeconfig file to just run kubectl 
-#         # ? this shit is still not working as expected 
-#       # sudo sed -i 's/127.0.0.1/192.168.56.110/g' /etc/rancher/k3s/k3s.yaml
-#       # mkdir -p ~/.kube
-#       # sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-#       # sudo chown $(id -u):$(id -g) ~/.kube/config
-
-#       # sed -i 's/127.0.0.1/192.168.56.110/g' ~/.kube/config
-#         # Install net-tools for ifconfig
-#       sudo apt-get update
-#       sudo apt-get install net-tools
-
-#     SHELL
-#   end
-
-#   # Define the K3s Worker Node
-#   config.vm.define "serverSW" do |worker|
-#     worker.vm.hostname = "serverSW"
-#     worker.vm.network "private_network", ip: "192.168.56.111", type: "static" 
-#     worker.vm.provider "vmware_desktop" do |vb|
-#       vb.memory = 1024
-#       vb.cpus = 1
-#     end
-#     worker.vm.provision "shell", inline: <<-SHELL
-#       curl -sfL https://get.k3s.io | sh -s - agent --server https://92.168.56.110:6443 --node-ip 192.168.56.111 --token-file /vagrant/node-token
-#     SHELL
-#   end
-
-#   # Common provisioning for both VMs - Install kubectl
-#   config.vm.provision "shell", inline: <<-SHELL
-#     sudo apt-get update
-#     sudo apt-get install -y apt-transport-https ca-certificates curl
-
-#     # Install kubectl for ARM architecture
-#     curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/arm64/kubectl"
-#     sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-#   SHELL
-# end
