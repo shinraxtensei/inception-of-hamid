@@ -21,7 +21,7 @@ curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
 echo "=== Creating k3d cluster ==="
 k3d cluster delete mycluster 2>/dev/null || true
 k3d cluster create mycluster \
-  --port "8080:80@loadbalancer" \
+  --port "8080:8080@loadbalancer" \
   --port "8888:8888@loadbalancer"
 
 echo "=== Creating namespaces ==="
@@ -34,11 +34,18 @@ kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/st
 echo "=== Waiting for ArgoCD to be ready ==="
 kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
 
+echo "=== Configuring ArgoCD for insecure mode ==="
+kubectl patch configmap argocd-cmd-params-cm -n argocd --type merge -p '{"data":{"server.insecure":"true"}}'
+
 echo "=== Exposing ArgoCD ==="
-kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "LoadBalancer"}}'
+kubectl patch svc argocd-server -n argocd --type merge -p '{"spec":{"type":"LoadBalancer","ports":[{"name":"http","port":8080,"targetPort":8080,"protocol":"TCP"}]}}'
+
+echo "=== Restarting ArgoCD server ==="
+kubectl rollout restart deployment argocd-server -n argocd
+kubectl rollout status deployment argocd-server -n argocd
 
 echo "=== Deploying Application ==="
-kubectl apply -f /vagrant/confs/application.yaml
+kubectl apply -f ./confs/application.yaml
 
 echo "=== Waiting for application sync ==="
 sleep 30
@@ -48,9 +55,9 @@ echo "ArgoCD Password:"
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
 echo ""
 echo "========================================"
-echo "ArgoCD UI: http://localhost:8080"
+echo "ArgoCD UI: http://YOUR_IP:8080"
 echo "Username: admin"
-echo "App URL: http://localhost:8888"
+echo "App URL: http://YOUR_IP:8888"
 echo "========================================"
 
 kubectl get all -n argocd
