@@ -12,14 +12,14 @@ spec:
       labels:
         app: app-three
     spec:
-      containers:    
+      containers:
       - name: hello-kubernetes
         image: paulbouwer/hello-kubernetes:1.9
         ports:
         - containerPort: 8080
-        env:                                                                    
-        - name: MESSAGE                                                         
-          value: HelLo From App3.
+        env:
+        - name: MESSAGE
+          value: Hello from app3
 
 ---
 apiVersion: v1
@@ -30,7 +30,6 @@ spec:
   selector:
     app: app-three
   ports:
-    - name: app-three
-      protocol: TCP
-      port: 80                                                                    
-      targetPort: 8080
+  - protocol: TCP
+    port: 80
+    targetPort: 8080

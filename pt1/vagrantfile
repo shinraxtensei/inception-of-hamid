@@ -1,32 +1,31 @@
 Vagrant.configure("2") do |config|
-  # Using Ubuntu 20.04 for ARM64
-  config.vm.box = "bento/ubuntu-20.04-arm64"
+  config.vm.box = "ubuntu/focal64"
   
-  # Server VM config
+  # Server VM
   config.vm.define "serverS" do |server|
     server.vm.hostname = "serverS"
     server.vm.network "private_network", ip: "192.168.56.110"
-    server.vm.provider "vmware_desktop" do |vmware|
-      vmware.gui = false
-      vmware.vmx["memsize"] = "1024"
-      vmware.vmx["numvcpus"] = "1"
+    
+    server.vm.provider "virtualbox" do |vb|
+      vb.memory = "1024"
+      vb.cpus = 1
+      vb.name = "serverS"
     end
     
-    # Install K3s in server mode
     server.vm.provision "shell", path: "scripts/install_k3s_server.sh"
   end
   
-  # Worker VM config
+  # Worker VM
   config.vm.define "serverSW" do |worker|
     worker.vm.hostname = "serverSW"
     worker.vm.network "private_network", ip: "192.168.56.111"
-    worker.vm.provider "vmware_desktop" do |vmware|
-      vmware.gui = false
-      vmware.vmx["memsize"] = "1024"
-      vmware.vmx["numvcpus"] = "1"
+    
+    worker.vm.provider "virtualbox" do |vb|
+      vb.memory = "1024"
+      vb.cpus = 1
+      vb.name = "serverSW"
     end
     
-    # Install K3s in agent mode
     worker.vm.provision "shell", path: "scripts/install_k3s_agent.sh"
   end
 end
