@@ -25,11 +25,6 @@ kubectl apply -f /vagrant/confs/app2-deployment.yaml
 kubectl apply -f /vagrant/confs/app3-deployment.yaml
 kubectl apply -f /vagrant/confs/ingress.yaml
 
-# Wait for deployments
-kubectl wait --for=condition=available --timeout=60s deployment/app-one
-kubectl wait --for=condition=available --timeout=60s deployment/app-two
-kubectl wait --for=condition=available --timeout=60s deployment/app-three
-
 echo "K3s server with apps installed successfully!"
 echo "Access apps via:"
 echo "  curl -H 'Host: app1.com' 192.168.56.110"
