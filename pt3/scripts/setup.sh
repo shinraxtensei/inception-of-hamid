@@ -1,64 +1,84 @@
 #!/bin/bash
 
-set -e
-
-echo "=== Installing required packages ==="
-sudo apt-get update
-sudo apt-get install -y curl
+# --- 1. PRE-REQUISITES & TOOLS ---
 
 echo "=== Installing Docker ==="
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
+if ! command -v docker &> /dev/null; then
+    curl -fsSL https://get.docker.com | sh
+    sudo usermod -aG docker $USER
+    echo "Docker installed. You may need to restart your session for group changes to take effect."
+else
+    echo "Docker is already installed."
+fi
 
-echo "=== Installing kubectl ==="
+echo "=== Installing K3d ==="
+wget -q -O - https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+
+echo "=== Installing Kubectl ==="
 curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
 sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 rm kubectl
 
-echo "=== Installing k3d ==="
-curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+echo "=== Setting up Aliases ==="
+# Check if alias already exists to avoid duplication
+if ! grep -q "alias k=kubectl" ~/.bashrc; then
+    echo 'alias k=kubectl' >> ~/.bashrc
+fi
+source ~/.bashrc
 
-echo "=== Creating k3d cluster ==="
-k3d cluster delete mycluster 2>/dev/null || true
-k3d cluster create mycluster \
-  --port "8080:8080@loadbalancer" \
-  --port "8888:8888@loadbalancer"
+# --- 2. CLUSTER CREATION ---
 
-echo "=== Creating namespaces ==="
+echo "=== Creating K3d Cluster ==="
+# Port Mappings:
+# 8080 -> 30000 (Argo CD Interface)
+# 8888 -> 30001 (Your Application)
+k3d cluster create mycluster --api-port 6550 \
+    -p "8080:30000@server:0" \
+    -p "8888:30001@server:0" \
+    --wait
+
+# --- 3. NAMESPACES ---
+
+echo "=== Creating Namespaces ==="
+# Creating namespaces as required by Part 3 [cite: 460]
 kubectl create namespace argocd
 kubectl create namespace dev
 
-echo "=== Installing ArgoCD ==="
+# --- 4. ARGOCD SETUP ---
+
+echo "=== Installing Argo CD ==="
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
-echo "=== Waiting for ArgoCD to be ready ==="
-kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+echo "=== Patching Argo CD Service to NodePort 30000 ==="
+# This exposes the Argo CD UI to your host on port 8080
+kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "NodePort", "ports": [{"name": "http", "port": 80, "targetPort": 8080, "nodePort": 30000}]}}'
 
-echo "=== Configuring ArgoCD for insecure mode ==="
-kubectl patch configmap argocd-cmd-params-cm -n argocd --type merge -p '{"data":{"server.insecure":"true"}}'
+# --- 5. APPLICATION DEPLOYMENT ---
 
-echo "=== Exposing ArgoCD ==="
-kubectl patch svc argocd-server -n argocd --type merge -p '{"spec":{"type":"LoadBalancer","ports":[{"name":"http","port":8080,"targetPort":8080,"protocol":"TCP"}]}}'
+echo "=== Applying Argo CD Application Config ==="
+# This tells Argo CD to fetch your code from GitHub and deploy it to the 'dev' namespace [cite: 463]
+if [ -f "../confs/app.yml" ]; then
+    kubectl apply -f ../confs/app.yml
+else
+    echo "Error: ../confs/app.yml not found. Please check your file structure."
+    exit 1
+fi
 
-echo "=== Restarting ArgoCD server ==="
-kubectl rollout restart deployment argocd-server -n argocd
-kubectl rollout status deployment argocd-server -n argocd
+echo "=== Waiting for Application Service to be created... ==="
+while ! kubectl get svc playground-service -n dev &> /dev/null; do
+    echo "Waiting for Argo CD to deploy playground-service..."
+    sleep 5
+done
 
-echo "=== Deploying Application ==="
-kubectl apply -f ./confs/application.yaml
+echo "=== Patching Application Service to NodePort 30001 ==="
+# This connects to the playground app (running on port 8888) to the host port 8888 via NodePort 30001
+kubectl patch svc playground-service -n dev -p '{"spec": {"type": "NodePort", "ports": [{"port": 8888, "targetPort": 8888, "nodePort": 30001}]}}'
 
-echo "=== Waiting for application sync ==="
-sleep 30
+# --- 6. OUTPUT & CREDENTIALS ---
 
-echo "========================================"
-echo "ArgoCD Password:"
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+echo "=== Setup Complete ==="
+echo "Argo CD URL: http://localhost:8080"
+echo "Application URL: http://localhost:8888 (Wait for pods to be Ready)"
 echo ""
-echo "========================================"
-echo "ArgoCD UI: http://YOUR_IP:8080"
-echo "Username: admin"
-echo "App URL: http://YOUR_IP:8888"
-echo "========================================"
-
-kubectl get all -n argocd
-kubectl get all -n dev
+echo "=== Argo CD Initial Admin Password ==="
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 --decode; echo

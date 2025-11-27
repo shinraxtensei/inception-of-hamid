@@ -6,9 +6,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: http://gitlab-webservice-default.gitlab.svc.cluster.local:8181/root/iot-manifests.git
-    targetRevision: main
-    path: .
+    repoURL: http://gitlab-webservice-default.gitlab.svc.cluster.local:8181/root/hamid-iot.git
+    targetRevision: HEAD
+    path: manifests
   destination:
     server: https://kubernetes.default.svc
     namespace: dev
@@ -17,4 +17,4 @@ spec:
       prune: true
       selfHeal: true
     syncOptions:
-    - CreateNamespace=true
+      - CreateNamespace=true
